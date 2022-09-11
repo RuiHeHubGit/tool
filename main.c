@@ -319,7 +319,7 @@ DWORD WINAPI CheckVersion(LPVOID lpPara) {
     char path[MAX_PATH];
     _getcwd(path, MAX_PATH);
     strcat(path, "//version");
-    int result = DownloadToFile("https://raw.githubusercontent.com", "/RuiHeHubGit/tool/main/README.md", path);
+    int result = DownloadToFile("https://raw.githubusercontent.com/RuiHeHubGit/tool/main/resource/res.rc", path);
     switch (result)
     {
         case S_OK:

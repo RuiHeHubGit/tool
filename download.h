@@ -7,4 +7,4 @@
 
 #endif //TOOL_DOWNLOAD_H
 
-int DownloadToFile(const char *baseUrl, char *urlPath, const char *path);
+int DownloadToFile(const char *url, const char *filePath);
