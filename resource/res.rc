@@ -24,15 +24,15 @@ VS_VERSION_INFO VERSIONINFO
         BEGIN
             BLOCK "080404b0"
             BEGIN
-                VALUE "CompanyName",      "HeRui"                  //å…¬å¸åç§°
-                VALUE "FileDescription",  "tool"                  //æ–‡ä»¶è¯´æ˜
-                VALUE "InternalName",     "tool"                  //å†…éƒ¨æ–‡ä»¶å
-                VALUE "ProductName",      "tool"                  //äº§å“åç§°
-                VALUE "OriginalFilename", "tool.exe"                    //åŸå§‹æ–‡ä»¶å
-                VALUE "LegalCopyright",   "Copyright (C)2022-2022"        //ç‰ˆæƒ
-                VALUE "ProductVersion",   "1.1.0.0"                       //äº§å“ç‰ˆæœ¬å·
-                VALUE "FileVersion",      "1.1.0.0"                       //æ–‡ä»¶ç‰ˆæœ¬
-                VALUE "VersionDesc",       "new Versionæ–°å¢é¡¹ç›®åˆ—è¡¨æ”¯æŒæ¨¡ç³Šæœç´¢"
+                VALUE "CompanyName",      "HeRui"                  //¹«Ë¾Ãû³Æ
+                VALUE "FileDescription",  "tool"                  //ÎÄ¼şËµÃ÷
+                VALUE "InternalName",     "tool"                  //ÄÚ²¿ÎÄ¼şÃû
+                VALUE "ProductName",      "tool"                  //²úÆ·Ãû³Æ
+                VALUE "OriginalFilename", "tool.exe"                    //Ô­Ê¼ÎÄ¼şÃû
+                VALUE "LegalCopyright",   "Copyright (C)2022-2022"        //°æÈ¨
+                VALUE "ProductVersion",   "1.1.0.0"                       //²úÆ·°æ±¾ºÅ
+                VALUE "FileVersion",      "1.1.0.0"                       //ÎÄ¼ş°æ±¾
+                VALUE "VersionDesc",       "new VersionĞÂÔöÏîÄ¿ÁĞ±íÖ§³ÖÄ£ºıËÑË÷"
             END
         END
         BLOCK "VarFileInfo"

@@ -320,7 +320,7 @@ void PopToolMenu(HWND hwnd, WPARAM wParam, LPARAM lParam) {
 
 void GetFileVersion(char *asVer) {
     char FileName[MAX_PATH] = {0};
-    GetModuleFileName(NULL, FileName, sizeof(FileName) - 1);
+    GetModuleFileName(NULL, FileName, MAX_PATH - 1);
 
     VS_FIXEDFILEINFO *pVsInfo;
     unsigned int iFileInfoSize = sizeof(VS_FIXEDFILEINFO);
@@ -377,12 +377,27 @@ DWORD WINAPI CheckVersion(LPVOID lpPara) {
 
             if (strcmp(releaseVersion, currentVersion) > 0) {
                 char releaseVersionDesc[MAX_LINE_SIZE] = {0};
-                WCHAR versionText[MAX_LINE_SIZE] = {0};
+                char versionText[MAX_LINE_SIZE] = {0};
                 ReadTextFile(path, (int (*)(const char *, void *)) GetReleaseVersionDesc, releaseVersionDesc);
 
-                sprintf(versionText, "Release version:%s\n%s", releaseVersion,
+                sprintf(versionText, "ÊÇ·ñÏÂÔØĞÂ°æ±¾£¿\nĞÂ°æ±¾ºÅ£º%s\n Éı¼¶ÄÚÈİ£º%s", releaseVersion,
                         releaseVersionDesc);
-                MessageBoxA((HWND) lpPara, versionText, "Discover new versions", MB_YESNO);
+                if (IDYES == MessageBoxA((HWND) lpPara, TEXT(versionText), TEXT("·¢ÏÖĞÂ°æ±¾"), MB_YESNO)) {
+                    _getcwd(path, MAX_PATH);
+                    strcat(path, "//tool.exe");
+                    strcat(path, releaseVersion);
+                    result = DownloadToFile("https://raw.githubusercontent.com/RuiHeHubGit/tool/tool.exe", path);
+                    if (result == S_OK) {
+                        sprintf(versionText, "ĞèÒªÁ¢¼´ÖØÆôÊ¹ÓÃĞÂ°æ±¾Âğ£¿\n°æ±¾ºÅ£º%s", releaseVersion);
+                        if (IDYES == MessageBoxA((HWND) lpPara, TEXT(versionText), TEXT("ĞÂ°æ±¾ÏÂÔØ³É¹¦"), MB_YESNO)) {
+                            sprintf(path, "\"%s\"", path);
+                            ShellExecute(NULL, NULL, "explorer.exe", path, NULL, SW_SHOW);
+                            exit(0);
+                        }
+                    } else {
+                        MessageBoxA((HWND) lpPara, TEXT("ÏÂÔØĞÂ°æ±¾Ê§°Ü£¬ÉÔºóÔÙÊÔ"), TEXT("Éı¼¶Ê§°Ü"), MB_OK);
+                    }
+                }
             }
         }
             break;
@@ -436,7 +451,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    PSTR szCmdLine, INT iCmdShow) {
-    system("chcp 65001 > nul");
+    system("chcp 936 > nul");
     setbuf(stdout, NULL);
 
     hAppInstance = hInstance;
@@ -485,18 +500,18 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
-    // éšè—ä»»åŠ¡æ å›¾æ ‡
+    // Òş²ØÈÎÎñÀ¸Í¼±ê
     SetWindowLong(hwnd, GWL_EXSTYLE, WS_EX_TOOLWINDOW);
 
-    // åœ¨å±å¹•ä¸Šæ˜¾ç¤ºçª—å£
+    // ÔÚÆÁÄ»ÉÏÏÔÊ¾´°¿Ú
     ShowWindow(hwnd, iCmdShow);
-    // æŒ‡ç¤ºçª—å£è‡ªæˆ‘æ›´æ–°
+    // Ö¸Ê¾´°¿Ú×ÔÎÒ¸üĞÂ
     UpdateWindow(hwnd);
 
-    // æ£€æŸ¥ç‰ˆæœ¬
+    // ¼ì²é°æ±¾
     CreateThread(NULL, 0, CheckVersion, hwnd, 0, NULL);
 
-    // ä»æ¶ˆæ¯é˜Ÿåˆ—ä¸­å–å¾—æ¶ˆæ¯
+    // ´ÓÏûÏ¢¶ÓÁĞÖĞÈ¡µÃÏûÏ¢
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
