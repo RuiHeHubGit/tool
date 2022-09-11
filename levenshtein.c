@@ -4,9 +4,8 @@
 
 #include "levenshtein.h"
 
-int Min(int x, int y, int z)
-{
-    if(x <= y && x <= z)
+int Min(int x, int y, int z) {
+    if (x <= y && x <= z)
         return x;
     else if (y <= z)
         return y;
@@ -14,8 +13,7 @@ int Min(int x, int y, int z)
         return z;
 }
 
-int levenshteinTwoRows(char s[], int s_len, char t[], int t_len)
-{
+int levenshteinTwoRows(const char *s, int s_len, const char *t, int t_len) {
     //退化的基本情况
     if (s_len == 0)
         return t_len;
@@ -32,7 +30,7 @@ int levenshteinTwoRows(char s[], int s_len, char t[], int t_len)
         //编辑距离就是从原字符串s中删除每个字符到目标字符串t
         v1[0] = i + 1;
         for (j = 0; j < t_len; j++) {
-            int cost = (s[i] == t[j]) ? 0:1;
+            int cost = (s[i] == t[j]) ? 0 : 1;
             v1[j + 1] = Min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
         }
 

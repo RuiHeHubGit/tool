@@ -9,7 +9,7 @@
 #define CONFIG_PROPERTIES_WINFRAME_H
 #define IDI_ICON1 101
 
-HWND CreateSingleWinFrame(LPCSTR title, int width, int height, HWND parentHwnd, HINSTANCE hInstance, WNDPROC lpWndProc);
-
 #endif //CONFIG_PROPERTIES_WINFRAME_H
+
+HWND CreateSingleWinFrame(LPCSTR title, int width, int height, HWND parentHwnd, HINSTANCE hInstance, WNDPROC lpWndProc);
 

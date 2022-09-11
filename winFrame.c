@@ -4,7 +4,8 @@
 
 #include "winFrame.h"
 
-HWND CreateSingleWinFrame(LPCSTR title, int width, int height, HWND parentHwnd, HINSTANCE hInstance, WNDPROC lpWndProc) {
+HWND
+CreateSingleWinFrame(LPCSTR title, int width, int height, HWND parentHwnd, HINSTANCE hInstance, WNDPROC lpWndProc) {
     static int id = 0;
     HWND hwnd = 0;
     WNDCLASS wndclass;

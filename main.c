@@ -3,12 +3,16 @@
 #include <commctrl.h>
 #include <string.h>
 #include <wingdi.h>
+#include <dir.h>
+
 
 #include "openProjects.h"
 #include "md5.h"
 #include "uuid.h"
 #include "unicode.h"
 #include "jsonFormat.h"
+#include "download.h"
+
 
 #define IDI_ICON1 101
 #define HMENU_BUTTON_TOPMOST 1
@@ -43,6 +47,8 @@ static HWND switchForegroundWindowNext;
 static INT scw;
 static INT sch;
 static INT wy = -1;
+
+DWORD WINAPI CheckVersion(LPVOID lpPara);
 
 void SetWindowTopmost(HWND hwnd, BOOL topmost) {
     if (hwnd == NULL) {
@@ -277,8 +283,10 @@ void HandleMenuAction(HWND hwnd, INT code) {
             break;
         case 1004:
             Md5Generator(hwnd, hAppInstance);
+            break;
         case 1005:
             UnicodeConverter(hwnd, hAppInstance);
+            break;
         case 1007:
             JsonFormat(hwnd, hAppInstance);
             break;
@@ -301,19 +309,35 @@ void PopToolMenu(HWND hwnd, WPARAM wParam, LPARAM lParam) {
     }
 
     POINT point;
-    ClientToScreen(hwnd, &point);
-    BOOL ret = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_HORIZONTAL, point.x + LOWORD(lParam), point.y + HIWORD(lParam),
+    GetCursorPos(&point);
+    BOOL ret = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_HORIZONTAL, point.x, point.y,
                               0, hwnd, NULL);
     HandleMenuAction(hwnd, ret);
 }
 
+DWORD WINAPI CheckVersion(LPVOID lpPara) {
+    char path[MAX_PATH];
+    _getcwd(path, MAX_PATH);
+    strcat(path, "//version");
+    int result = DownloadToFile("https://raw.githubusercontent.com", "/RuiHeHubGit/tool/main/README.md", path);
+    switch (result)
+    {
+        case S_OK:
+        {
+            printf("The download version successfully.\n");
+        }
+            break;
+        case E_OUTOFMEMORY:
+            printf("The path length is invalid, or there is insufficient memory to complete the operation.\n");
+            break;
+    }
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    HINSTANCE hinstance;
 
     switch (message) {
         case WM_CREATE:
-            hinstance = (HINSTANCE) GetWindowLong(hwnd, GWL_HINSTANCE);
-            InitView(hwnd, hinstance);
+            InitView(hwnd, hAppInstance);
             break;
         case WM_PAINT:
             PaintUI(hwnd);
@@ -353,7 +377,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    PSTR szCmdLine, INT iCmdShow) {
-    // system("chcp 65001 > nul");
+    system("chcp 65001 > nul");
+    setbuf(stdout, NULL);
 
     hAppInstance = hInstance;
 
@@ -408,6 +433,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     ShowWindow(hwnd, iCmdShow);
     // 指示窗口自我更新
     UpdateWindow(hwnd);
+
+    // 检查版本
+    CreateThread(NULL, 0, CheckVersion, hwnd, 0, NULL);
 
     // 从消息队列中取得消息
     while (GetMessage(&msg, NULL, 0, 0)) {

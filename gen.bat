@@ -1,4 +1,11 @@
-del *.o
-windres -i "resource/icon.rc" -o "icon.o"
-gcc -c *.h *.c -mwindows
-gcc -g *.o -o tool.exe -mwindows
+@echo off
+del *.o *.gch *.exe 2>nul
+
+if '%1%' equ '-c' (
+    goto exit
+)
+windres -i "resource/res.rc" -o "res.o"
+
+gcc *.h *.c *.o -o tool.exe -mwindows -lws2_32
+
+:exit

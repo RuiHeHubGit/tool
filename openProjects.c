@@ -10,19 +10,30 @@
 #include "winFrame.h"
 #include "levenshtein.h"
 
+#define SEARCH_TEXT_BOX_HEIGHT 24
+#define SEARCH_TEXT_BOX_WIDTH 200
+
 static Project *projects[MAX_PROJECT_COUNT];
 static INT projectCount = 0;
 
 static Property *properties[100];
 static int propertyCount = 0;
 
+static char mainPropertiesFilePath[MAX_PATH] = {0};
 static char ideaPath[MAX_PATH] = {0};
 static char projectsRootPath[MAX_PATH] = {0};
+
 static int setTopMostThreadRunning = 0;
 static BOOL updateRows = FALSE;
-static HINSTANCE mainAppInstance;
+static BOOL updateDetailRows = FALSE;
 
-HWND InitTable(HWND pHwnd);
+static HINSTANCE mainAppInstance;
+static HWND hWndListView;
+static HWND hWndFindEdit;
+static HWND hWndPathShow;
+
+
+HWND InitProjectList(HWND hwnd);
 
 int GetSubText(const char *source, const char *key, const char *keyEnd, char *target, int maxTargetLen);
 
@@ -54,7 +65,7 @@ void OpenGitUrl(Project *pProject);
 
 void ShowFileInExplorer(Project *pProject);
 
-DWORD WINAPI LoadOpenProjectData(HWND pHwnd);
+DWORD WINAPI LoadOpenProjectData(void *pHwnd);
 
 void SelectPath(HWND hwnd, char *path);
 
@@ -72,9 +83,21 @@ void CleanProjects();
 
 void GetProjectDesc(Project *pProject);
 
-HWND CreateFindTextEdit(HWND pHwnd);
+HWND CreateSearchTextEdit(HWND pHwnd);
 
-void OnEditTextChange(HWND pHwnd, HWND pHwnd1);
+void CreateSelectPanel(HWND hwnd);
+
+void OnEditTextChange(HWND pHwnd);
+
+int GetSimilarity(const char *text1, const char *text2, int coefficient);
+
+void SortList(HWND hWndMain, HWND hWndTable, const char *text);
+
+void initView(HWND pHwnd);
+
+void HandleCommand(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+
+void LoadProjectData(HWND pHwnd, BOOL forceSelect);
 
 int TryAddProject(LPCSTR path, LPCSTR dirName, void *result) {
     if (projectCount == MAX_PROJECT_COUNT) {
@@ -92,7 +115,7 @@ int TryAddProject(LPCSTR path, LPCSTR dirName, void *result) {
 
     int find = ReadTextFile(filePath, (int (*)(const char *, void *)) GetPomInfoCallback, newProject);
     if (find) {
-        strcpy(newProject->path, filePath);
+        sprintf(newProject->path, "%s\\%s", path, dirName);
         strcpy(newProject->name, dirName);
 
         sprintf(filePath, "%s\\%s", path, dirName);
@@ -236,6 +259,15 @@ int TryGetAppId(LPCSTR path, LPCSTR dirName, Project *project) {
     char filePath[MAX_PATH];
     sprintf(filePath, "%s\\%s\\src\\main\\resources\\META-INF\\app.properties", path, dirName);
     ReadTextFile(filePath, (int (*)(const char *, void *)) GetAppIdCallback, project);
+    if (project->appId[0] == 0) {
+        char key[MAX_PROPERTY_KEY_SIZE] = {0};
+        char value[MAX_PROPERTY_VALUE_SIZE] = {0};
+        sprintf(key, "app.%s.appId", project->name);
+        GetProperty(key, value);
+        if (strlen(value) > 0) {
+            strcpy(project->appId, value);
+        }
+    }
     return 0;
 }
 
@@ -350,7 +382,7 @@ char Tolower(char c) {
         return c;
 }
 
-HWND CreateListView(HWND hwndParent) {
+HWND CreateProjectListView(HWND hwndParent) {
 
     RECT rcClient;
 
@@ -359,9 +391,9 @@ HWND CreateListView(HWND hwndParent) {
     HWND hWndListView = CreateWindow(WC_LISTVIEW,
                                      TEXT("Projects"),
                                      WS_CHILD | LVS_REPORT | WS_VISIBLE | LVS_EDITLABELS,
-                                     0, 20,
+                                     0, SEARCH_TEXT_BOX_HEIGHT + 3,
                                      rcClient.right - rcClient.left,
-                                     rcClient.bottom - rcClient.top - 20,
+                                     rcClient.bottom - rcClient.top - SEARCH_TEXT_BOX_HEIGHT,
                                      hwndParent,
                                      (HMENU) IDC_LIST_VIEW,
                                      NULL,
@@ -372,7 +404,7 @@ HWND CreateListView(HWND hwndParent) {
     return hWndListView;
 }
 
-BOOL InitListViewColumns(HWND hListview) {
+BOOL InitProjectListViewColumns(HWND hListview) {
     // 设置ListView的列
     LVCOLUMN vcl;
     vcl.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
@@ -400,11 +432,12 @@ BOOL InitListViewColumns(HWND hListview) {
     return TRUE;
 }
 
-BOOL AddListViewRows(HWND hListview) {
+BOOL AddProjectListViewRows(HWND hListview) {
 
     LVITEM vitem;
     vitem.mask = LVIF_TEXT;
 
+    ListView_DeleteAllItems(hListview);
     for (int i = 0; i < projectCount; i++) {
         Project project = *projects[i];
         vitem.pszText = project.appId;
@@ -424,60 +457,96 @@ BOOL AddListViewRows(HWND hListview) {
         vitem.pszText = project.gitBranch;
         ListView_SetItem(hListview, &vitem);
     }
+    ListView_RedrawItems(hListview, 0, projectCount);
 
     return TRUE;
 }
 
-HWND InitTable(HWND hwnd) {
-    HWND hWndListView = CreateListView(hwnd);
-    InitListViewColumns(hWndListView);
+HWND InitProjectList(HWND hwnd) {
+    HWND hWndListView = CreateProjectListView(hwnd);
+    InitProjectListViewColumns(hWndListView);
     return hWndListView;
 }
 
-DWORD WINAPI LoadOpenProjectData(HWND pHwnd) {
+HWND CreateSearchTextEdit(HWND pHwnd) {
+    RECT rcClient;
 
-    int updateProperties = 0;
+    GetClientRect(pHwnd, &rcClient);
 
+    HWND hwndEdit = CreateWindow(WC_EDIT, TEXT(""), WS_VISIBLE | WS_CHILD | WS_BORDER,
+                                 2, 1, SEARCH_TEXT_BOX_WIDTH, SEARCH_TEXT_BOX_HEIGHT, pHwnd,
+                                 (HMENU) IDC_SEARCH_EDIT, mainAppInstance,
+                                 NULL);
+
+    SetFocus(hwndEdit);
+
+    HFONT hFont = (HFONT) GetStockObject(DEFAULT_GUI_FONT);
+    SendMessage(hwndEdit, WM_SETFONT, (WPARAM) hFont, 1);
+    return hwndEdit;
+}
+
+DWORD WINAPI LoadOpenProjectData(void *pHwnd) {
     char propertiesFilePath[MAX_PATH] = {0};
     GetCurrentDirectory(MAX_PATH, propertiesFilePath);
     strcat(propertiesFilePath, "\\config.properties");
+    strcpy(mainPropertiesFilePath, propertiesFilePath);
 
     loadProperties(propertiesFilePath, properties);
 
+    LoadProjectData((HWND)pHwnd, FALSE);
+
+    return 0;
+}
+
+void LoadProjectData(HWND pHwnd, BOOL forceSelect) {
+    int updateProperties = 0;
+    int select = 0;
     char path[MAX_PATH] = {0};
     GetProperty("PROJECT_ROOT_PATH", path);
-    if (path[0] == 0) {
+    if (path[0] == 0 || forceSelect) {
         projectCount = 0;
         SelectPath(pHwnd, path);
-        SetProperty("PROJECT_ROOT_PATH", path);
-        updateProperties = 1;
-    }
-    strcpy(projectsRootPath, path);
-    if (projectsRootPath[0] != 0) {
-        SetWindowText(pHwnd, path);
+        select = 1;
     }
 
-    if (projectCount > 0 && strcpy(path, projectsRootPath) != 0) {
-        CleanProjects();
+    if (strlen(path) > 2) {
+        strcpy(projectsRootPath, path);
+        SetWindowText(hWndPathShow, path);
+
+        if (select) {
+            SetProperty("PROJECT_ROOT_PATH", path);
+            updateProperties = 1;
+        }
     }
 
+    // idea
+    select = 0;
     GetProperty("IDEA_APP_PATH", path);
-    if (path[0] == 0) {
+    if (path[0] == 0 || forceSelect) {
         SelectFile(pHwnd, path, MAX_PATH);
-        SetProperty("IDEA_APP_PATH", path);
-        updateProperties = 1;
+        select = 1;
     }
-    strcpy(ideaPath, path);
+
+    if (strlen(path) > 2) {
+        strcpy(ideaPath, path);
+
+        if (select) {
+            SetProperty("IDEA_APP_PATH", path);
+            updateProperties = 1;
+        }
+    }
 
     if (updateProperties) {
-        SaveProperties(propertiesFilePath, properties);
+        SaveProperties(mainPropertiesFilePath, properties);
+    }
+
+    if (projectCount > 0 && strcmp(path, projectsRootPath) != 0) {
+        CleanProjects();
     }
 
     EnumerateDirectory(projectsRootPath, TryAddProject, NULL);
     updateRows = TRUE;
     SendMessageA(pHwnd, WM_PAINT, 0, 0);
-
-    return 0;
 }
 
 void CleanProjects() {
@@ -503,7 +572,7 @@ void SaveProperties(const char *path, struct Property *properties[100]) {
 void GetProperty(const char *key, char *value) {
     value[0] = 0;
     for (int i = 0; i < propertyCount; ++i) {
-        if (strcmp(properties[i]->key, key) == 0) {
+        if (strcmpi(properties[i]->key, key) == 0) {
             strcpy(value, properties[i]->value);
             break;
         }
@@ -704,7 +773,7 @@ HWND InitDetailListView(HWND hwnd) {
     return hWndListView;
 }
 
-void AddDetailListViewRows(HWND hWndListView) {
+void AddDetailListViewRows(HWND hWndDetailListView) {
     Project p = *currentShowProject;
     char *items[] = {
             "appId", p.appId,
@@ -719,6 +788,7 @@ void AddDetailListViewRows(HWND hWndListView) {
 
     int size = sizeof(items) / sizeof(char *);
 
+    ListView_DeleteAllItems(hWndDetailListView);
     // 设置行
     for (int i = 0; i < size; i += 2) {
         LVITEM vitem;
@@ -727,25 +797,25 @@ void AddDetailListViewRows(HWND hWndListView) {
         vitem.pszText = items[i];
         vitem.iItem = i / 2;
         vitem.iSubItem = 0;
-        ListView_InsertItem(hWndListView, &vitem);
+        ListView_InsertItem(hWndDetailListView, &vitem);
         vitem.iSubItem = 1;
         vitem.pszText = items[i + 1];
-        ListView_SetItem(hWndListView, &vitem);
+        ListView_SetItem(hWndDetailListView, &vitem);
     }
+    ListView_RedrawItems(hWndDetailListView, 0, size);
 }
 
 LRESULT CALLBACK ShowDetailWndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     static HWND hWndDetailListView;
-    static BOOL updateRows = FALSE;
 
     switch (message) {
         case WM_CREATE:
             hWndDetailListView = InitDetailListView(hwnd);
-            updateRows = TRUE;
+            updateDetailRows = TRUE;
             break;
         case WM_PAINT:
-            if (updateRows) {
-                updateRows = FALSE;
+            if (updateDetailRows) {
+                updateDetailRows = FALSE;
                 AddDetailListViewRows(hWndDetailListView);
             }
             break;
@@ -755,10 +825,9 @@ LRESULT CALLBACK ShowDetailWndProc(HWND hwnd, UINT message, WPARAM wParam, LPARA
 
 void ShowProjectDetail(HWND pHwnd, int index) {
     currentShowProject = projects[index];
-    HWND hwnd = CreateSingleWinFrame(currentShowProject->name, 600, 200, pHwnd, mainAppInstance, ShowDetailWndProc);
-
-    int sch = GetSystemMetrics(SM_CYSCREEN);
-    SetWindowPos(hwnd, HWND_TOPMOST, 20, (int) hwnd % (sch / 2), 0, 0, SWP_NOSIZE);
+    HWND hwnd = CreateSingleWinFrame(TEXT("Detail"), 600, 200, pHwnd, mainAppInstance, ShowDetailWndProc);
+    updateDetailRows = TRUE;
+    SendMessageA(hwnd, WM_PAINT, 0, 0);
 }
 
 void OpenGitUrl(Project *project) {
@@ -767,22 +836,9 @@ void OpenGitUrl(Project *project) {
     }
 }
 
-void OnNotify(HWND hwnd, WPARAM wParam, LPARAM lParam) {
-    NMHDR *pNmHdr = (NMHDR *) lParam;
-    if (pNmHdr != NULL && pNmHdr->idFrom == 1) {
-        LPNMLISTVIEW pNMLV = (LPNMLISTVIEW) lParam;
-        if (pNmHdr->code == NM_DBLCLK) {
-            if (pNMLV->iItem < 0 || pNMLV->iItem >= projectCount) {
-                return;
-            }
-            // idea打开项目
-            OpenProjectCommand(ideaPath, projects[pNMLV->iItem]->path);
-        }
-
-        if (pNmHdr->code == NM_RCLICK) {
-            PopListViewMenu(hwnd, wParam, lParam, pNMLV->iItem);
-        }
-    }
+DWORD WINAPI ReLoadProjectData(LPVOID lpPara) {
+    LoadProjectData((HWND) lpPara, TRUE);
+    return 0;
 }
 
 DWORD WINAPI SetOpenProjectWindTopMost(LPVOID lpPara) {
@@ -820,73 +876,167 @@ void OpenProjectCommand(const char *appName, const char *cmd) {
     }
 }
 
-HWND CreateFindTextEdit(HWND pHwnd) {
-    RECT rcClient;
-
-    GetClientRect(pHwnd, &rcClient);
-
-    HWND hwndEdit = CreateWindow(TEXT("EDIT"), TEXT(""), WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL,
-                                 0, 0, (rcClient.right - rcClient.left) / 3, 20, pHwnd, (HMENU) IDC_FIND_EDIT, NULL,
-                                 NULL);
-    return hwndEdit;
+void bubble_sort(void *a[], int n, int (*cmp)(void *, void *)) {
+    int i, j;
+    void *temp;
+    for (j = 0; j < n - 1; j++) {
+        for (i = 0; i < n - 1 - j; i++) {
+            if (cmp(a[i], a[i + 1]) > 0) {
+                temp = a[i];
+                a[i] = a[i + 1];
+                a[i + 1] = temp;
+            }
+        }
+    }
 }
 
-int CALLBACK CompareFunc(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort) {
-    Project *project1 = (Project *)lParam1;
-    Project *project2 = (Project *)lParam2;
-    return project2->sort - project1->sort;
+int ProjectCmp(void *p1, void *p2) {
+    Project *project1 = (Project *) p1;
+    Project *project2 = (Project *) p2;
+    if (project1->sort > project2->sort) {
+        return -1;
+    }
+    if (project1->sort < project2->sort) {
+        return 1;
+    }
+    return 0;
 }
 
-void OnEditTextChange(HWND pHwndEdit, HWND pHwndListView) {
+void OnEditTextChange(HWND hwnd) {
     char text[21] = {0};
-    GetWindowText(pHwndEdit, text, 20);
+    GetWindowText(hWndFindEdit, text, 20);
 
-    RECT rcClient;
-    GetClientRect(pHwndListView, &rcClient);
-	
-	int index = -1;
-
-    for (int i = 0; i < projectCount; ++i) {
-        Project *project = projects[i];
-        int t1 = levenshteinTwoRows(text, strlen(text), project->appId, strlen(project->appId));
-        int t2 = levenshteinTwoRows(text, strlen(text), project->name, strlen(project->name));
-        project->sort = max(t1, t2);
+    int len = strlen(text);
+    if (len == 0) {
+        return;
     }
 
-    ListView_SortItems(pHwndListView, CompareFunc, NULL);
-
-/*    SNDMSG((pHwndListView), LVM_SETHOTITEM, (WPARAM) (i), 0);
-    ListView_Scroll(pHwndListView, 0, (int) (1.0 * rcClient.bottom - rcClient.top) * i / projectCount - 20);*/
+    SortList(hwnd, hWndListView, text);
 }
 
+void SortList(HWND hWndMain, HWND hWndTable, const char *text) {
+    Project *project;
+    for (int i = 0; i < projectCount; ++i) {
+        project = projects[i];
+        int sort = 0;
+
+        if (strstr(project->name, text)) {
+            sort = sort + projectCount;
+        }
+
+        if (strstr(project->appId, text)) {
+            sort = sort + projectCount;
+        }
+
+        if (strstr(project->desc, text)) {
+            sort = sort + projectCount;
+        }
+
+        if (strstr(project->gitBranch, text)) {
+            sort = sort + projectCount;
+        }
+
+        int dist1 = GetSimilarity(project->name, text, 60);
+        int dist2 = GetSimilarity(project->appId, text, 60);
+        int dist3 = GetSimilarity(project->desc, text, 60);
+        int dist4 = GetSimilarity(project->gitBranch, text, 60);
+        sort += max(dist1, max(dist2, max(dist3, dist4)));
+        project->sort = sort;
+    }
+
+    bubble_sort((void **) projects, projectCount, ProjectCmp);
+
+    updateRows = true;
+
+    SendMessageA(hWndMain, WM_PAINT, 0, 0);
+}
+
+int GetSimilarity(const char *text1, const char *text2, int coefficient) {
+    int len1 = strlen(text1);
+    int len2 = strlen(text2);
+    int maxLen = max(len1, len2);
+    if (maxLen == 0) {
+        return 0;
+    }
+    int t = levenshteinTwoRows(text1, len1, text2, len2);
+    if (t <= maxLen) {
+        return (coefficient - coefficient * t / maxLen);
+    }
+    return 0;
+}
+
+void OnNotify(HWND hwnd, WPARAM wParam, LPARAM lParam) {
+    NMHDR *pNmHdr = (NMHDR *) lParam;
+    if (pNmHdr != NULL && pNmHdr->idFrom == 1) {
+        LPNMLISTVIEW pNMLV = (LPNMLISTVIEW) lParam;
+        if (pNmHdr->code == NM_DBLCLK) {
+            if (pNMLV->iItem < 0 || pNMLV->iItem >= projectCount) {
+                return;
+            }
+            // idea打开项目
+            OpenProjectCommand(ideaPath, projects[pNMLV->iItem]->path);
+        }
+
+        if (pNmHdr->code == NM_RCLICK) {
+            PopListViewMenu(hwnd, wParam, lParam, pNMLV->iItem);
+        }
+    }
+}
+
+void HandleCommand(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (LOWORD(wParam) == IDC_SEARCH_EDIT && HIWORD(wParam) == EN_CHANGE) {
+        OnEditTextChange(hwnd);
+    }
+
+    if (LOWORD(wParam) == IDC_BTN_SELECT && HIWORD(wParam) == 0) {
+        CreateThread(NULL, 0, ReLoadProjectData, hwnd, 0, NULL);
+    }
+
+    /*BOOL bCtrl = GetKeyState(VK_CONTROL);
+    if (bCtrl && (wParam == 'a' || wParam == 'A')) {
+        SetFocus(hWndFindEdit);
+        SendMessage(hWndFindEdit, EM_SETSEL, -1, 0);
+    }*/
+}
+
+void initView(HWND hwnd) {
+    hWndListView = InitProjectList(hwnd);
+    hWndFindEdit = CreateSearchTextEdit(hwnd);
+    CreateSelectPanel(hwnd);
+
+    CreateThread(NULL, 0, LoadOpenProjectData, hwnd, 0, NULL);
+}
+
+void CreateSelectPanel(HWND hwnd) {
+    RECT rcClient;
+    GetClientRect(hwnd, &rcClient);
+    hWndPathShow = CreateWindow(WC_STATIC, TEXT("projects path not select"), WS_VISIBLE | WS_CHILD | WS_BORDER | ES_RIGHT,
+                 SEARCH_TEXT_BOX_WIDTH + 10, 1, rcClient.right - SEARCH_TEXT_BOX_WIDTH - 110, 24, hwnd,
+                 (HMENU) IDC_BTN_SELECT, mainAppInstance, NULL);
+
+    HWND hwndBtn = CreateWindow(WC_BUTTON, TEXT("select"), WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                                rcClient.right - 90, 1, 70, 24, hwnd, (HMENU) IDC_BTN_SELECT,
+                                mainAppInstance, NULL);
+    HFONT hFont = (HFONT) GetStockObject(DEFAULT_GUI_FONT);
+    SendMessage(hWndPathShow, WM_SETFONT, (WPARAM) hFont, 1);
+    SendMessage(hwndBtn, WM_SETFONT, (WPARAM) hFont, 1);
+}
 
 LRESULT CALLBACK OpenProjectsWndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    static HWND hWndListView;
-    static HWND hWndFindEdit;
-
     switch (message) {
         case WM_CREATE:
-            hWndListView = InitTable(hwnd);
-            hWndFindEdit = CreateFindTextEdit(hwnd);
-            CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) LoadOpenProjectData,
-                         hwnd, 0, NULL);
-            SetFocus(hWndFindEdit);
+            initView(hwnd);
+            break;
         case WM_PAINT:
             if (updateRows) {
                 updateRows = false;
-                AddListViewRows(hWndListView);
+                AddProjectListViewRows(hWndListView);
+                UpdateWindow(hWndListView);
             }
             break;
-        case WM_COMMAND: {
-            if (LOWORD(wParam) == IDC_FIND_EDIT && HIWORD(wParam) == EN_CHANGE) {
-                OnEditTextChange(hWndFindEdit, hWndListView);
-            }
-            /*BOOL bCtrl = GetKeyState(VK_CONTROL);
-            if (bCtrl && (wParam == 'a' || wParam == 'A')) {
-                SetFocus(hWndFindEdit);
-                SendMessage(hWndFindEdit, EM_SETSEL, -1, 0);
-            }*/
-        }
+        case WM_COMMAND:
+            HandleCommand(hwnd, message, wParam, lParam);
+            break;
         case WM_NOTIFY:
             if (LOWORD(wParam) == IDC_LIST_VIEW) {
                 OnNotify(hwnd, wParam, lParam);
