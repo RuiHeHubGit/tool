@@ -347,14 +347,6 @@ int GetReleaseVersion(const char *line, char *releaseVersion) {
 
 int GetReleaseVersionDesc(const char *line, char *versionDesc) {
     if (GetSubText(line, "VALUE\"VersionDesc\",\"", "\"", versionDesc, MAX_LINE_SIZE)) {
-        int iSize;
-        char *pszMultiByte;
-
-        iSize = WideCharToMultiByte(CP_UTF8, 0, versionDesc, -1, NULL, 0, NULL, NULL);
-        pszMultiByte = (char *) malloc(iSize * sizeof(char));
-        WideCharToMultiByte(CP_UTF8, 0, versionDesc, -1, pszMultiByte, iSize, NULL, NULL);
-        strcpy(versionDesc, pszMultiByte);
-        free(pszMultiByte);
         return 1;
     }
     return 0;
