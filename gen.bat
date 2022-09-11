@@ -6,6 +6,6 @@ if '%1%' equ '-c' (
 )
 windres -i "resource/res.rc" -o "res.o"
 
-gcc *.h *.c *.o -o tool.exe -mwindows -lwininet
+gcc *.h *.c *.o -o tool.exe -mwindows -lwininet -lVersion
 
 :exit

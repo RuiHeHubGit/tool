@@ -12,6 +12,7 @@
 #include "unicode.h"
 #include "jsonFormat.h"
 #include "download.h"
+#include "util.h"
 
 
 #define IDI_ICON1 101
@@ -27,6 +28,8 @@
 #define GWL_HINSTANCE (-6)
 
 #define TEXT_WINDOWS_TITLE "tool"
+
+#define MAX_VERSION_SIZE 20
 
 static HINSTANCE hAppInstance;
 static HMODULE hInst;
@@ -315,20 +318,76 @@ void PopToolMenu(HWND hwnd, WPARAM wParam, LPARAM lParam) {
     HandleMenuAction(hwnd, ret);
 }
 
+void GetFileVersion(char *asVer) {
+    char FileName[MAX_PATH] = {0};
+    GetModuleFileName(NULL, FileName, sizeof(FileName) - 1);
+
+    VS_FIXEDFILEINFO *pVsInfo;
+    unsigned int iFileInfoSize = sizeof(VS_FIXEDFILEINFO);
+
+    int iVerInfoSize = GetFileVersionInfoSize(FileName, NULL);
+    if (iVerInfoSize != 0) {
+        char pBuf[MAX_LINE_SIZE];
+        if (GetFileVersionInfo(FileName, 0, iVerInfoSize, pBuf)) {
+            if (VerQueryValue(pBuf, "\\", (void **) &pVsInfo, &iFileInfoSize)) {
+                sprintf(pBuf, "%d.%d.%d.%d", HIWORD(pVsInfo->dwProductVersionMS), LOWORD(pVsInfo->dwProductVersionMS),
+                        HIWORD(pVsInfo->dwProductVersionLS), LOWORD(pVsInfo->dwProductVersionLS));
+                strcpy(asVer, pBuf);
+            }
+        }
+    }
+}
+
+int GetReleaseVersion(const char *line, char *releaseVersion) {
+    if (GetSubText(line, "VALUE\"ProductVersion\",\"", "\"", releaseVersion, MAX_VERSION_SIZE)) {
+        return 1;
+    }
+    return 0;
+}
+
+int GetReleaseVersionDesc(const char *line, char *versionDesc) {
+    if (GetSubText(line, "VALUE\"VersionDesc\",\"", "\"", versionDesc, MAX_LINE_SIZE)) {
+        int iSize;
+        char *pszMultiByte;
+
+        iSize = WideCharToMultiByte(CP_UTF8, 0, versionDesc, -1, NULL, 0, NULL, NULL);
+        pszMultiByte = (char *) malloc(iSize * sizeof(char));
+        WideCharToMultiByte(CP_UTF8, 0, versionDesc, -1, pszMultiByte, iSize, NULL, NULL);
+        strcpy(versionDesc, pszMultiByte);
+        free(pszMultiByte);
+        return 1;
+    }
+    return 0;
+}
+
+
 DWORD WINAPI CheckVersion(LPVOID lpPara) {
     char path[MAX_PATH];
     _getcwd(path, MAX_PATH);
     strcat(path, "//version");
     int result = DownloadToFile("https://raw.githubusercontent.com/RuiHeHubGit/tool/main/resource/res.rc", path);
-    switch (result)
-    {
-        case S_OK:
-        {
+    switch (result) {
+        case S_OK: {
             printf("The download version successfully.\n");
+            char currentVersion[MAX_VERSION_SIZE] = {0};
+            GetFileVersion(currentVersion);
+            char releaseVersion[MAX_VERSION_SIZE] = {0};
+            ReadTextFile(path, (int (*)(const char *, void *)) GetReleaseVersion, releaseVersion);
+            printf("currentVersion:%s\nreleaseVersion:%s\n", currentVersion, releaseVersion);
+
+            if (strcmp(releaseVersion, currentVersion) > 0) {
+                char releaseVersionDesc[MAX_LINE_SIZE] = {0};
+                WCHAR versionText[MAX_LINE_SIZE] = {0};
+                ReadTextFile(path, (int (*)(const char *, void *)) GetReleaseVersionDesc, releaseVersionDesc);
+
+                sprintf(versionText, "Release version:%s\n%s", releaseVersion,
+                        releaseVersionDesc);
+                MessageBoxA((HWND) lpPara, versionText, "Discover new versions", MB_YESNO);
+            }
         }
             break;
-        case E_OUTOFMEMORY:
-            printf("The path length is invalid, or there is insufficient memory to complete the operation.\n");
+        default:
+            printf("CheckVersion error:%d\n", result);
             break;
     }
 }
