@@ -79,7 +79,7 @@ int DownloadToFile(const char *url, const char *filePath) {
         return -6;
     }
 
-    FILE* file = fopen(filePath, "wb+");
+    FILE* file = fopen(filePath, "wb");
     if (file == NULL)
     {
         InternetCloseHandle(hHttpRequest);

@@ -29,6 +29,9 @@
 
 #define TEXT_WINDOWS_TITLE "tool"
 
+#define UPGRADE_CMD "-upgrade"
+#define UPGRADE_CLEAN_CMD "-upgradeClean"
+
 #define MAX_VERSION_SIZE 20
 
 static HINSTANCE hAppInstance;
@@ -38,6 +41,7 @@ static CHAR tsTextCharBuf[MAX_TITLE_LEN];
 static CHAR wsTitleText[MAX_TITLE_LEN];
 static INT tsScrollPos;
 
+static HWND hwndMain;
 static HWND fhWnd;
 static HWND fhwTextHWnd;
 static HWND tsTextHWnd;
@@ -51,7 +55,6 @@ static INT scw;
 static INT sch;
 static INT wy = -1;
 
-DWORD WINAPI CheckVersion(LPVOID lpPara);
 
 void SetWindowTopmost(HWND hwnd, BOOL topmost) {
     if (hwnd == NULL) {
@@ -318,17 +321,14 @@ void PopToolMenu(HWND hwnd, WPARAM wParam, LPARAM lParam) {
     HandleMenuAction(hwnd, ret);
 }
 
-void GetFileVersion(char *asVer) {
-    char FileName[MAX_PATH] = {0};
-    GetModuleFileName(NULL, FileName, MAX_PATH - 1);
-
+void GetFileVersion(char *fileName, char *asVer) {
     VS_FIXEDFILEINFO *pVsInfo;
     unsigned int iFileInfoSize = sizeof(VS_FIXEDFILEINFO);
 
-    int iVerInfoSize = GetFileVersionInfoSize(FileName, NULL);
+    int iVerInfoSize = GetFileVersionInfoSize(fileName, NULL);
     if (iVerInfoSize != 0) {
         char pBuf[MAX_LINE_SIZE];
-        if (GetFileVersionInfo(FileName, 0, iVerInfoSize, pBuf)) {
+        if (GetFileVersionInfo(fileName, 0, iVerInfoSize, pBuf)) {
             if (VerQueryValue(pBuf, "\\", (void **) &pVsInfo, &iFileInfoSize)) {
                 sprintf(pBuf, "%d.%d.%d.%d", HIWORD(pVsInfo->dwProductVersionMS), LOWORD(pVsInfo->dwProductVersionMS),
                         HIWORD(pVsInfo->dwProductVersionLS), LOWORD(pVsInfo->dwProductVersionLS));
@@ -352,43 +352,95 @@ int GetReleaseVersionDesc(const char *line, char *versionDesc) {
     return 0;
 }
 
+void UpgradeApp(char *releaseVersion, int step) {
+    char releaseAppFile[MAX_PATH] = {0};
+    char currentFilePath[MAX_PATH] = {0};
+    char versionText[MAX_LINE_SIZE] = {0};
+    char dir[MAX_PATH] = {0};
+
+    GetModuleFileName(NULL, currentFilePath, MAX_PATH - 1);
+    if (step == 1) {
+        strcpy(releaseAppFile, currentFilePath);
+        releaseAppFile[strlen(releaseAppFile) - strlen(releaseVersion) - 3] = 0;
+        sprintf(releaseAppFile, "%s.exe", releaseAppFile);
+
+        CopyFileA(currentFilePath, releaseAppFile, TRUE);
+
+        char params[MAX_PATH];
+        sprintf(params, "%s %s", UPGRADE_CLEAN_CMD, releaseVersion);
+
+        MessageBoxA(NULL, releaseAppFile, params, MB_OK);
+
+        CreateNewProcess(releaseAppFile, params);
+        exit(0);
+    }
+
+    if (step == 2) {
+        strcpy(releaseAppFile, currentFilePath);
+        releaseAppFile[strlen(releaseAppFile) - 3] = 0;
+        sprintf(releaseAppFile, "%s.%s.exe", releaseAppFile, releaseVersion);
+        MessageBoxA(NULL, releaseAppFile, "", MB_OK);
+        DeleteFileA(releaseAppFile);
+        return;
+    }
+
+    _getcwd(dir, MAX_PATH);
+    sprintf(releaseAppFile, "%s\\tool.exe.%s", dir, releaseVersion);
+    if (IsExistingFile(releaseAppFile)) {
+        DeleteFileA(releaseAppFile);
+    }
+
+    int result = DownloadToFile("https://github.com/RuiHeHubGit/tool/raw/main/tool.exe", releaseAppFile);
+    if (result == S_OK) {
+        sprintf(versionText, "需要立即重启使用新版本吗？\n版本号：%s", releaseVersion);
+        if (IDYES == MessageBoxA(hwndMain, TEXT(versionText), TEXT("tool的新版本下载成功"), MB_YESNO)) {
+            currentFilePath[strlen(currentFilePath) - 3] = 0;
+            sprintf(currentFilePath, "%s%s.exe", currentFilePath, releaseVersion);
+            MoveFileA(releaseAppFile, currentFilePath);
+
+            char params[MAX_PATH];
+            sprintf(params, "%s %s", UPGRADE_CMD, releaseVersion);
+            CreateNewProcess(currentFilePath, params);
+            exit(0);
+        }
+    } else {
+        DeleteFileA(releaseAppFile);
+        MessageBoxA(hwndMain, TEXT("下载新版本失败，稍后再试"), TEXT("升级失败"), MB_OK);
+    }
+}
 
 DWORD WINAPI CheckVersion(LPVOID lpPara) {
-    char path[MAX_PATH];
-    _getcwd(path, MAX_PATH);
-    strcat(path, "//version");
-    int result = DownloadToFile("https://raw.githubusercontent.com/RuiHeHubGit/tool/main/resource/res.rc", path);
+    char versionPath[MAX_PATH];
+
+    // 下载版本文件
+    _getcwd(versionPath, MAX_PATH);
+    strcat(versionPath, "//version");
+    int result = DownloadToFile("https://raw.githubusercontent.com/RuiHeHubGit/tool/main/resource/res.rc", versionPath);
+
     switch (result) {
         case S_OK: {
             printf("The download version successfully.\n");
             char currentVersion[MAX_VERSION_SIZE] = {0};
-            GetFileVersion(currentVersion);
             char releaseVersion[MAX_VERSION_SIZE] = {0};
-            ReadTextFile(path, (int (*)(const char *, void *)) GetReleaseVersion, releaseVersion);
+            char currentFilePath[MAX_PATH] = {0};
+
+            // 最新版本
+            ReadTextFile(versionPath, (int (*)(const char *, void *)) GetReleaseVersion, releaseVersion);
             printf("currentVersion:%s\nreleaseVersion:%s\n", currentVersion, releaseVersion);
+
+            // 当前版本
+            GetModuleFileName(NULL, currentFilePath, MAX_PATH - 1);
+            GetFileVersion(currentFilePath, currentVersion);
 
             if (strcmp(releaseVersion, currentVersion) > 0) {
                 char releaseVersionDesc[MAX_LINE_SIZE] = {0};
                 char versionText[MAX_LINE_SIZE] = {0};
-                ReadTextFile(path, (int (*)(const char *, void *)) GetReleaseVersionDesc, releaseVersionDesc);
+                ReadTextFile(versionPath, (int (*)(const char *, void *)) GetReleaseVersionDesc, releaseVersionDesc);
 
-                sprintf(versionText, "是否下载新版本？\n新版本号：%s\n 升级内容：%s", releaseVersion,
+                sprintf(versionText, "是否下载新版本？\n新版本号：%s\n升级内容：\n%s", releaseVersion,
                         releaseVersionDesc);
-                if (IDYES == MessageBoxA((HWND) lpPara, TEXT(versionText), TEXT("发现新版本"), MB_YESNO)) {
-                    _getcwd(path, MAX_PATH);
-                    strcat(path, "//tool.exe");
-                    strcat(path, releaseVersion);
-                    result = DownloadToFile("https://raw.githubusercontent.com/RuiHeHubGit/tool/tool.exe", path);
-                    if (result == S_OK) {
-                        sprintf(versionText, "需要立即重启使用新版本吗？\n版本号：%s", releaseVersion);
-                        if (IDYES == MessageBoxA((HWND) lpPara, TEXT(versionText), TEXT("新版本下载成功"), MB_YESNO)) {
-                            sprintf(path, "\"%s\"", path);
-                            ShellExecute(NULL, NULL, "explorer.exe", path, NULL, SW_SHOW);
-                            exit(0);
-                        }
-                    } else {
-                        MessageBoxA((HWND) lpPara, TEXT("下载新版本失败，稍后再试"), TEXT("升级失败"), MB_OK);
-                    }
+                if (IDYES == MessageBoxA((HWND) lpPara, TEXT(versionText), TEXT("tool有新版本"), MB_YESNO)) {
+                    UpgradeApp(releaseVersion, 0);
                 }
             }
         }
@@ -450,6 +502,15 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     static CHAR szAppName[] = TEXT("WindowsTool");
 
+    MessageBoxA(NULL, szCmdLine, "", MB_OK);
+    if (strstr(szCmdLine, UPGRADE_CMD)) {
+        UpgradeApp(strchr(szCmdLine, ' '), 1);
+    }
+
+    if (strstr(szCmdLine, UPGRADE_CLEAN_CMD)) {
+        UpgradeApp(strchr(szCmdLine, ' '), 2);
+    }
+
     HWND preHwnd = FindWindowA(szAppName, NULL);
     if (preHwnd) {
         ShowWindow(preHwnd, SW_SHOWDEFAULT);
@@ -457,7 +518,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         exit(0);
     }
 
-    HWND hwnd;
     MSG msg;
     WNDCLASS wndclass;
     wndclass.cbClsExtra = 0;
@@ -479,29 +539,29 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     scw = GetSystemMetrics(SM_CXSCREEN);
     sch = GetSystemMetrics(SM_CYSCREEN);
 
-    hwnd = CreateWindow(szAppName, TEXT(TEXT_WINDOWS_TITLE), WS_SYSMENU,
-                        -4, (int) (sch * 0.618 - WD_HEIGHT / 2), WD_WIDTH, WD_HEIGHT,
-                        NULL, NULL, hInstance, NULL);
+    hwndMain = CreateWindow(szAppName, TEXT(TEXT_WINDOWS_TITLE), WS_SYSMENU,
+                            -4, (int) (sch * 0.618 - WD_HEIGHT / 2), WD_WIDTH, WD_HEIGHT,
+                            NULL, NULL, hInstance, NULL);
 
-    HMENU hmenu = GetSystemMenu(hwnd, FALSE);
+    HMENU hmenu = GetSystemMenu(hwndMain, FALSE);
     RemoveMenu(hmenu, SC_MAXIMIZE, MF_BYCOMMAND);
     RemoveMenu(hmenu, SC_SIZE, MF_BYCOMMAND);
     RemoveMenu(hmenu, SC_RESTORE, MF_BYCOMMAND);
     RemoveMenu(hmenu, SC_MINIMIZE, MF_BYCOMMAND);
     DestroyMenu(hmenu);
 
-    SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    SetWindowPos(hwndMain, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
     // 隐藏任务栏图标
-    SetWindowLong(hwnd, GWL_EXSTYLE, WS_EX_TOOLWINDOW);
+    SetWindowLong(hwndMain, GWL_EXSTYLE, WS_EX_TOOLWINDOW);
 
     // 在屏幕上显示窗口
-    ShowWindow(hwnd, iCmdShow);
+    ShowWindow(hwndMain, iCmdShow);
     // 指示窗口自我更新
-    UpdateWindow(hwnd);
+    UpdateWindow(hwndMain);
 
     // 检查版本
-    CreateThread(NULL, 0, CheckVersion, hwnd, 0, NULL);
+    CreateThread(NULL, 0, CheckVersion, hwndMain, 0, NULL);
 
     // 从消息队列中取得消息
     while (GetMessage(&msg, NULL, 0, 0)) {

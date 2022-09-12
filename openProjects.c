@@ -46,8 +46,7 @@ bool AlreadyAdd(char path[260]);
 
 void OnNotify(HWND hwnd, WPARAM wParam, LPARAM lParam);
 
-void OpenProjectCommand(const char *appName, const char *cmd);
-
+void OpenProjectCommand(const char *appName, const char *params);
 
 
 int GetPomInfoCallback(const char *line, Project *project);
@@ -379,7 +378,7 @@ DWORD WINAPI LoadOpenProjectData(void *pHwnd) {
 
     loadProperties(propertiesFilePath, properties);
 
-    LoadProjectData((HWND)pHwnd, FALSE);
+    LoadProjectData((HWND) pHwnd, FALSE);
 
     return 0;
 }
@@ -739,22 +738,10 @@ DWORD WINAPI SetOpenProjectWindTopMost(LPVOID lpPara) {
     return 0;
 }
 
-void OpenProjectCommand(const char *appName, const char *cmd) {
-    PROCESS_INFORMATION info;
-    STARTUPINFO si = {0};
-    char openCmd[520] = {0};
-
-    sprintf(openCmd, "\"%s\" \"%s\"", appName, cmd);
-
-    if (!CreateProcess(NULL, (LPTSTR) openCmd,
-                       NULL, NULL, FALSE,
-                       CREATE_NO_WINDOW, NULL, NULL,
-                       &si, &info)) {
+void OpenProjectCommand(const char *appName, const char *params) {
+    if (!CreateNewProcess(appName, params)) {
         return;
     }
-
-    CloseHandle(info.hProcess);
-    CloseHandle(info.hThread);
 
     if (!setTopMostThreadRunning) {
         setTopMostThreadRunning = 1;
@@ -896,9 +883,10 @@ void initView(HWND hwnd) {
 void CreateSelectPanel(HWND hwnd) {
     RECT rcClient;
     GetClientRect(hwnd, &rcClient);
-    hWndPathShow = CreateWindow(WC_STATIC, TEXT("projects path not select"), WS_VISIBLE | WS_CHILD | WS_BORDER | ES_RIGHT,
-                 SEARCH_TEXT_BOX_WIDTH + 10, 1, rcClient.right - SEARCH_TEXT_BOX_WIDTH - 110, 24, hwnd,
-                 (HMENU) IDC_BTN_SELECT, mainAppInstance, NULL);
+    hWndPathShow = CreateWindow(WC_STATIC, TEXT("projects path not select"),
+                                WS_VISIBLE | WS_CHILD | WS_BORDER | ES_RIGHT,
+                                SEARCH_TEXT_BOX_WIDTH + 10, 1, rcClient.right - SEARCH_TEXT_BOX_WIDTH - 110, 24, hwnd,
+                                (HMENU) IDC_BTN_SELECT, mainAppInstance, NULL);
 
     HWND hwndBtn = CreateWindow(WC_BUTTON, TEXT("select"), WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
                                 rcClient.right - 90, 1, 70, 24, hwnd, (HMENU) IDC_BTN_SELECT,

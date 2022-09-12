@@ -21,6 +21,55 @@ int ReadTextFile(const char *filePath, int (*callback)(const char *line, void *p
     return flag;
 }
 
+// 必要的头文件
+#include <windows.h>
+
+/**
+ * @brief 判断指定的路径是否为存在的文件（不是文件夹）
+ * @param path 路径字符串
+ * @return 存在返回true，不存在返回false。
+ */
+BOOL IsExistingFile(LPCSTR path) {
+    HANDLE hFile; // 文件句柄
+
+    // 重新设置错误代码，避免发生意外
+    SetLastError(ERROR_SUCCESS);
+
+    // 直接打开文件
+    hFile = CreateFileW
+            (
+                    path,
+                    FILE_READ_EA,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    NULL,
+                    OPEN_EXISTING, // 打开一个存在的文件
+                    0,
+                    NULL //
+            );
+
+    DWORD error = GetLastError();
+
+#ifdef DEBUG
+    printf("hFile: %p\n", hFile);
+    printf("lastError: %lu\n", error);
+#endif
+
+    if (hFile == NULL || hFile == INVALID_HANDLE_VALUE) {
+        // 打开文件失败，检查错误代码
+        // 注意：有时候即使文件存在，也可能会打开失败，如拒绝访问的情况
+        return error != ERROR_PATH_NOT_FOUND &&
+               error != ERROR_FILE_NOT_FOUND;
+    } else {
+        // 打开成功，文件存在
+
+        // 记得关闭句柄释放资源
+        CloseHandle(hFile);
+        hFile = NULL;
+        return TRUE;
+    }
+}
+
+
 int GetSubText(const char *source, const char *key, const char *keyEnd, char *target, int maxTargetLen) {
     int keyIndex = 0;
     int findStartKey = 0;
@@ -115,4 +164,23 @@ char Tolower(char c) {
         return c + 32;
     else
         return c;
+}
+
+BOOL CreateNewProcess(const char *app, const char *params) {
+    PROCESS_INFORMATION info;
+    STARTUPINFO si = {0};
+    char openCmd[520] = {0};
+
+    sprintf(openCmd, "\"%s\" \"%s\"", app, params);
+
+    if (!CreateProcess(NULL, (LPTSTR) openCmd,
+                       NULL, NULL, FALSE,
+                       CREATE_NO_WINDOW, NULL, NULL,
+                       &si, &info)) {
+        return FALSE;
+    }
+
+    CloseHandle(info.hProcess);
+    CloseHandle(info.hThread);
+    return TRUE;
 }
