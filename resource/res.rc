@@ -8,8 +8,8 @@
 #endif
 
 VS_VERSION_INFO VERSIONINFO
-    FILEVERSION 1,1,0,0
-    PRODUCTVERSION 1,1,0,0
+    FILEVERSION 1,1,1,0
+    PRODUCTVERSION 1,1,1,0
     FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
     FILEFLAGS VS_FF_DEBUG
@@ -30,9 +30,9 @@ VS_VERSION_INFO VERSIONINFO
                 VALUE "ProductName",      "tool"                        //产品名称
                 VALUE "OriginalFilename", "tool.exe"                    //原始文件名
                 VALUE "LegalCopyright",   "Copyright (C)2022-2022"      //版权
-                VALUE "ProductVersion",   "1.1.0.0"                     //产品版本号
-                VALUE "FileVersion",      "1.1.0.0"                     //文件版本
-                VALUE "VersionDesc",       "* 新增项目列表支持模糊搜索"
+                VALUE "ProductVersion",   "1.1.1.0"                     //产品版本号
+                VALUE "FileVersion",      "1.1.1.0"                     //文件版本
+                VALUE "VersionDesc",       "* 新增版本升级功能"
             END
         END
         BLOCK "VarFileInfo"

@@ -49,11 +49,6 @@ BOOL IsExistingFile(LPCSTR path) {
 
     DWORD error = GetLastError();
 
-#ifdef DEBUG
-    printf("hFile: %p\n", hFile);
-    printf("lastError: %lu\n", error);
-#endif
-
     if (hFile == NULL || hFile == INVALID_HANDLE_VALUE) {
         // 打开文件失败，检查错误代码
         // 注意：有时候即使文件存在，也可能会打开失败，如拒绝访问的情况
@@ -61,8 +56,45 @@ BOOL IsExistingFile(LPCSTR path) {
                error != ERROR_FILE_NOT_FOUND;
     } else {
         // 打开成功，文件存在
+        // 关闭句柄释放资源
+        CloseHandle(hFile);
+        hFile = NULL;
+        return TRUE;
+    }
+}
 
-        // 记得关闭句柄释放资源
+BOOL GetFileTimeInfo(LPCSTR path, FILETIME *lpCreationTime, FILETIME *lpLastAccessTime, FILETIME *lpLastWriteTime) {
+    HANDLE hFile; // 文件句柄
+
+    // 重新设置错误代码，避免发生意外
+    SetLastError(ERROR_SUCCESS);
+
+    // 直接打开文件
+    hFile = CreateFileA
+            (
+                    path,
+                    FILE_READ_EA,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    NULL,
+                    OPEN_EXISTING, // 打开一个存在的文件
+                    0,
+                    NULL //
+            );
+
+    DWORD error = GetLastError();
+
+    if (hFile == NULL || hFile == INVALID_HANDLE_VALUE) {
+        // 打开文件失败，检查错误代码
+        // 注意：有时候即使文件存在，也可能会打开失败，如拒绝访问的情况
+        return error != ERROR_PATH_NOT_FOUND &&
+               error != ERROR_FILE_NOT_FOUND;
+    } else {
+        if (!GetFileTime(hFile, lpCreationTime, lpLastAccessTime, lpLastWriteTime)) {
+            printf("get file time error:%lu", GetLastError());
+        }
+
+        // 打开成功，文件存在
+        // 关闭句柄释放资源
         CloseHandle(hFile);
         hFile = NULL;
         return TRUE;
@@ -170,17 +202,33 @@ BOOL CreateNewProcess(const char *app, const char *params) {
     PROCESS_INFORMATION info;
     STARTUPINFO si = {0};
     char openCmd[520] = {0};
-
-    sprintf(openCmd, "\"%s\" \"%s\"", app, params);
-
-    if (!CreateProcess(NULL, (LPTSTR) openCmd,
-                       NULL, NULL, FALSE,
-                       CREATE_NO_WINDOW, NULL, NULL,
-                       &si, &info)) {
-        return FALSE;
+    if (app != NULL && strlen(app) > 0) {
+        strcat(openCmd, app);
+        strcat(openCmd, " ");
     }
 
-    CloseHandle(info.hProcess);
-    CloseHandle(info.hThread);
+    if (params != NULL && strlen(params)) {
+        strcat(openCmd, params);
+    }
+
+    si.wShowWindow = SW_HIDE;
+
+    DWORD dwCreationFlag = NORMAL_PRIORITY_CLASS | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW;
+    if (CreateProcess(NULL,
+                      openCmd,
+                      NULL,
+                      NULL,
+                      FALSE,
+                      dwCreationFlag,
+                      NULL,
+                      NULL,
+                      &si,
+                      &info)) {   //创建成功
+        CloseHandle(info.hProcess);
+        CloseHandle(info.hThread);
+    } else {
+        printf(TEXT("Create process failed,error code:%d"), GetLastError());
+        return FALSE;
+    }
     return TRUE;
 }

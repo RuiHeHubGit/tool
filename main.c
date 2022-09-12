@@ -4,7 +4,7 @@
 #include <string.h>
 #include <wingdi.h>
 #include <dir.h>
-
+#include <shlwapi.h>
 
 #include "openProjects.h"
 #include "md5.h"
@@ -353,12 +353,16 @@ int GetReleaseVersionDesc(const char *line, char *versionDesc) {
 }
 
 void checkUpgradeBat() {
-    char path[MAX_PATH];
-    _getcwd(path, MAX_PATH);
-    sprintf(path, "%s\\%s", path, UPGRADE_BAT_FILE_NAME);
-    if (IsExistingFile(path)) {
-        ShellExecuteA(NULL, "open",  path, NULL, NULL, SW_HIDE);
-        DeleteFileA(path);
+    char batPath[MAX_PATH];
+    _getcwd(batPath, MAX_PATH);
+    sprintf(batPath, "%s\\%s", batPath, UPGRADE_BAT_FILE_NAME);
+    if (IsExistingFile(batPath)) {
+        char cmd[MAX_PATH] = {0};
+        GetSystemDirectoryA(cmd, MAX_PATH);
+        strcat(cmd, "\\cmd.exe /c ");
+        strcat(cmd, batPath);
+        CreateNewProcess(NULL, cmd);
+        Sleep(1000);
         exit(0);
     }
 }
@@ -366,11 +370,16 @@ void checkUpgradeBat() {
 void CreateUpgradeBat(char *dir, char *releaseAppPath, char *currentAppPath) {
     char path[MAX_PATH];
     sprintf(path, "%s\\%s", dir, UPGRADE_BAT_FILE_NAME);
+
+
     FILE *fp = fopen(path, "w");
     if (fp != NULL) {
-        fprintf(fp, "timeout /T 2\n");
+        fprintf(fp, "ping -n 2 127.0.0.1 > nul\n");
+        fprintf(fp, "taskkill /IM %s\n", PathFindFileNameA(currentAppPath));
         fprintf(fp, "move \"%s\" \"%s\"\n", releaseAppPath, currentAppPath);
-        fprintf(fp, "start \"%s\"\n", currentAppPath);
+        fprintf(fp, "ping -n 2 127.0.0.1 > nul\n");
+        fprintf(fp, "start %s\n", PathFindFileNameA(currentAppPath));
+        fprintf(fp, "del %s\n", UPGRADE_BAT_FILE_NAME);
         fclose(fp);
     }
 }
@@ -392,10 +401,9 @@ void UpgradeApp(char *releaseVersion) {
     int result = DownloadToFile("https://github.com/RuiHeHubGit/tool/raw/main/tool.exe", releaseAppFile);
     if (result == S_OK) {
         CreateUpgradeBat(dir, releaseAppFile, currentFilePath);
-        sprintf(versionText, "需要立即重启使用新版本吗？\n版本号：%s", releaseVersion);
+        sprintf(versionText, "需要现在打开新版本使用吗？\n版本号：%s", releaseVersion);
         if (IDYES == MessageBoxA(hwndMain, TEXT(versionText), TEXT("tool的新版本下载成功"), MB_YESNO)) {
-            CreateNewProcess(currentFilePath, "");
-            exit(0);
+            checkUpgradeBat();
         }
     } else {
         DeleteFileA(releaseAppFile);
@@ -406,9 +414,27 @@ void UpgradeApp(char *releaseVersion) {
 DWORD WINAPI CheckVersion(LPVOID lpPara) {
     char versionPath[MAX_PATH];
 
-    // 下载版本文件
+
     _getcwd(versionPath, MAX_PATH);
     strcat(versionPath, "//version");
+
+    FILETIME lastWriteTime;
+    GetFileTimeInfo(versionPath, NULL, NULL, &lastWriteTime);
+
+    SYSTEMTIME sTime;
+    GetSystemTime(&sTime);
+
+    FILETIME systemFileTime;
+    SystemTimeToFileTime(&sTime, &systemFileTime);
+    LONGLONG versionCreateTime = ((LONGLONG)lastWriteTime.dwHighDateTime << 32) + lastWriteTime.dwLowDateTime;
+    LONGLONG systemTime = ((LONGLONG)systemFileTime.dwHighDateTime << 32) + systemFileTime.dwLowDateTime;
+    // 10 分钟
+    if ((LONGLONG)(systemTime - versionCreateTime) < 6000000000) {
+        printf("Check Interval time is too short, interval:%lld", systemTime - versionCreateTime);
+        return 0;
+    }
+
+    // 下载版本文件
     int result = DownloadToFile("https://raw.githubusercontent.com/RuiHeHubGit/tool/main/resource/res.rc", versionPath);
 
     switch (result) {

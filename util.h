@@ -20,3 +20,5 @@ int GetSubText(const char *source, const char *key, const char *keyEnd, char *ta
 char Tolower(char c);
 
 BOOL CreateNewProcess(const char *app, const char *params);
+
+BOOL GetFileTimeInfo(LPCSTR path, FILETIME *lpCreationTime, FILETIME *lpLastAccessTime, FILETIME *lpLastWriteTime);
