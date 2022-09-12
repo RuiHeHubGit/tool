@@ -36,7 +36,7 @@ BOOL IsExistingFile(LPCSTR path) {
     SetLastError(ERROR_SUCCESS);
 
     // 直接打开文件
-    hFile = CreateFileW
+    hFile = CreateFileA
             (
                     path,
                     FILE_READ_EA,
