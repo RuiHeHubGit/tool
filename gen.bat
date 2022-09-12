@@ -8,4 +8,6 @@ windres -i "resource/res.rc" -o "res.o"
 
 gcc *.h *.c *.o -o tool.exe -mwindows -lwininet -lVersion
 
+del *.o
+
 :exit

@@ -29,10 +29,10 @@
 
 #define TEXT_WINDOWS_TITLE "tool"
 
-#define UPGRADE_CMD "-upgrade"
-#define UPGRADE_CLEAN_CMD "-upgradeClean"
+#define UPGRADE_BAT_FILE_NAME "tool-upgrade.bat"
 
 #define MAX_VERSION_SIZE 20
+
 
 static HINSTANCE hAppInstance;
 static HMODULE hInst;
@@ -352,37 +352,36 @@ int GetReleaseVersionDesc(const char *line, char *versionDesc) {
     return 0;
 }
 
-void UpgradeApp(char *releaseVersion, int step) {
+void checkUpgradeBat() {
+    char path[MAX_PATH];
+    _getcwd(path, MAX_PATH);
+    sprintf(path, "%s\\%s", path, UPGRADE_BAT_FILE_NAME);
+    if (IsExistingFile(path)) {
+        ShellExecuteA(NULL, "open",  path, NULL, NULL, SW_HIDE);
+        DeleteFileA(path);
+        exit(0);
+    }
+}
+
+void CreateUpgradeBat(char *dir, char *releaseAppPath, char *currentAppPath) {
+    char path[MAX_PATH];
+    sprintf(path, "%s\\%s", dir, UPGRADE_BAT_FILE_NAME);
+    FILE *fp = fopen(path, "w");
+    if (fp != NULL) {
+        fprintf(fp, "timeout /T 2\n");
+        fprintf(fp, "move \"%s\" \"%s\"\n", releaseAppPath, currentAppPath);
+        fprintf(fp, "start \"%s\"\n", currentAppPath);
+        fclose(fp);
+    }
+}
+
+void UpgradeApp(char *releaseVersion) {
     char releaseAppFile[MAX_PATH] = {0};
     char currentFilePath[MAX_PATH] = {0};
     char versionText[MAX_LINE_SIZE] = {0};
     char dir[MAX_PATH] = {0};
 
     GetModuleFileName(NULL, currentFilePath, MAX_PATH - 1);
-    if (step == 1) {
-        strcpy(releaseAppFile, currentFilePath);
-        releaseAppFile[strlen(releaseAppFile) - strlen(releaseVersion) - 3] = 0;
-        sprintf(releaseAppFile, "%s.exe", releaseAppFile);
-
-        CopyFileA(currentFilePath, releaseAppFile, TRUE);
-
-        char params[MAX_PATH];
-        sprintf(params, "%s %s", UPGRADE_CLEAN_CMD, releaseVersion);
-
-        MessageBoxA(NULL, releaseAppFile, params, MB_OK);
-
-        CreateNewProcess(releaseAppFile, params);
-        exit(0);
-    }
-
-    if (step == 2) {
-        strcpy(releaseAppFile, currentFilePath);
-        releaseAppFile[strlen(releaseAppFile) - 3] = 0;
-        sprintf(releaseAppFile, "%s.%s.exe", releaseAppFile, releaseVersion);
-        MessageBoxA(NULL, releaseAppFile, "", MB_OK);
-        DeleteFileA(releaseAppFile);
-        return;
-    }
 
     _getcwd(dir, MAX_PATH);
     sprintf(releaseAppFile, "%s\\tool.exe.%s", dir, releaseVersion);
@@ -392,15 +391,10 @@ void UpgradeApp(char *releaseVersion, int step) {
 
     int result = DownloadToFile("https://github.com/RuiHeHubGit/tool/raw/main/tool.exe", releaseAppFile);
     if (result == S_OK) {
+        CreateUpgradeBat(dir, releaseAppFile, currentFilePath);
         sprintf(versionText, "需要立即重启使用新版本吗？\n版本号：%s", releaseVersion);
         if (IDYES == MessageBoxA(hwndMain, TEXT(versionText), TEXT("tool的新版本下载成功"), MB_YESNO)) {
-            currentFilePath[strlen(currentFilePath) - 3] = 0;
-            sprintf(currentFilePath, "%s%s.exe", currentFilePath, releaseVersion);
-            MoveFileA(releaseAppFile, currentFilePath);
-
-            char params[MAX_PATH];
-            sprintf(params, "%s %s", UPGRADE_CMD, releaseVersion);
-            CreateNewProcess(currentFilePath, params);
+            CreateNewProcess(currentFilePath, "");
             exit(0);
         }
     } else {
@@ -440,7 +434,7 @@ DWORD WINAPI CheckVersion(LPVOID lpPara) {
                 sprintf(versionText, "是否下载新版本？\n新版本号：%s\n升级内容：\n%s", releaseVersion,
                         releaseVersionDesc);
                 if (IDYES == MessageBoxA((HWND) lpPara, TEXT(versionText), TEXT("tool有新版本"), MB_YESNO)) {
-                    UpgradeApp(releaseVersion, 0);
+                    UpgradeApp(releaseVersion);
                 }
             }
         }
@@ -497,19 +491,11 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    PSTR szCmdLine, INT iCmdShow) {
     system("chcp 936 > nul");
     setbuf(stdout, NULL);
+    checkUpgradeBat();
 
     hAppInstance = hInstance;
 
     static CHAR szAppName[] = TEXT("WindowsTool");
-
-    MessageBoxA(NULL, szCmdLine, "", MB_OK);
-    if (strstr(szCmdLine, UPGRADE_CMD)) {
-        UpgradeApp(strchr(szCmdLine, ' '), 1);
-    }
-
-    if (strstr(szCmdLine, UPGRADE_CLEAN_CMD)) {
-        UpgradeApp(strchr(szCmdLine, ' '), 2);
-    }
 
     HWND preHwnd = FindWindowA(szAppName, NULL);
     if (preHwnd) {
